@@ -27,7 +27,7 @@ public class EndpointController {
     }
 
     @PostMapping
-    public ResponseEntity<Endpoint> register(@Valid @RequestBody EndpointRegistrationRequest request) {
+    public ResponseEntity<EndpointRegistrationResponse> register(@Valid @RequestBody EndpointRegistrationRequest request) {
         urlValidator.validateUrl(request.getUrl());
 
         Endpoint endpoint = new Endpoint();
@@ -41,10 +41,11 @@ public class EndpointController {
         
         byte[] secretBytes = new byte[32];
         new SecureRandom().nextBytes(secretBytes);
-        endpoint.setSecret(Base64.getEncoder().encodeToString(secretBytes));
+        String secret = Base64.getEncoder().encodeToString(secretBytes);
+        endpoint.setSecret(secret);
 
         Endpoint saved = endpointRepository.save(endpoint);
-        return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+        return ResponseEntity.status(HttpStatus.CREATED).body(new EndpointRegistrationResponse(saved, secret));
     }
 
     @GetMapping

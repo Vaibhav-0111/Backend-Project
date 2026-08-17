@@ -32,7 +32,7 @@ public class UrlValidator {
             try {
                 InetAddress[] addresses = InetAddress.getAllByName(url.getHost());
                 for (InetAddress address : addresses) {
-                    if (address.isLoopbackAddress() || address.isSiteLocalAddress() || address.isAnyLocalAddress() || address.isLinkLocalAddress()) {
+                    if (isInternal(address)) {
                         throw new IllegalArgumentException("Internal IP addresses are not allowed: " + address.getHostAddress());
                     }
                 }
@@ -40,5 +40,14 @@ public class UrlValidator {
                 throw new IllegalArgumentException("Could not resolve host: " + url.getHost());
             }
         }
+    }
+
+    public boolean isAllowed(InetAddress address) {
+        if (allowInternalIps) return true;
+        return !isInternal(address);
+    }
+    
+    private boolean isInternal(InetAddress address) {
+        return address.isLoopbackAddress() || address.isSiteLocalAddress() || address.isAnyLocalAddress() || address.isLinkLocalAddress();
     }
 }

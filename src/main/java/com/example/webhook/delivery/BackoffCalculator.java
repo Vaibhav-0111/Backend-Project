@@ -1,5 +1,6 @@
 package com.example.webhook.delivery;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.ThreadLocalRandom;
@@ -35,9 +36,14 @@ import java.util.concurrent.ThreadLocalRandom;
 @Component
 public class BackoffCalculator {
 
-    private static final long BASE_SECONDS = 30;
-    private static final long CAP_SECONDS = 4 * 3600; // 4 hours
-    public static final int MAX_ATTEMPTS = 8;
+    @Value("${webhook.delivery.backoff.base-seconds:30}")
+    private long baseSeconds;
+
+    @Value("${webhook.delivery.backoff.cap-seconds:14400}")
+    private long capSeconds;
+
+    @Value("${webhook.delivery.backoff.max-attempts:8}")
+    private int maxAttempts;
 
     /**
      * Calculate next retry delay in seconds using decorrelated jitter.
@@ -46,39 +52,39 @@ public class BackoffCalculator {
      * @return delay in seconds before next attempt
      */
     public long calculateDelay(int attemptNumber) {
-        long prevSleep = BASE_SECONDS;
+        long prevSleep = baseSeconds;
         for (int i = 1; i < attemptNumber; i++) {
-            prevSleep = Math.min(CAP_SECONDS, randomBetween(BASE_SECONDS, prevSleep * 3));
+            prevSleep = Math.min(capSeconds, randomBetween(baseSeconds, prevSleep * 3));
         }
-        return Math.min(CAP_SECONDS, randomBetween(BASE_SECONDS, prevSleep * 3));
+        return Math.min(capSeconds, randomBetween(baseSeconds, prevSleep * 3));
     }
 
     /**
      * Calculate delay with a fixed seed for testing — allows asserting bound growth.
      */
     public long calculateDelayDeterministic(int attemptNumber) {
-        long prevSleep = BASE_SECONDS;
+        long prevSleep = baseSeconds;
         for (int i = 1; i < attemptNumber; i++) {
             // Use midpoint instead of random for deterministic tests
-            prevSleep = Math.min(CAP_SECONDS, (BASE_SECONDS + prevSleep * 3) / 2);
+            prevSleep = Math.min(capSeconds, (baseSeconds + prevSleep * 3) / 2);
         }
-        return Math.min(CAP_SECONDS, (BASE_SECONDS + prevSleep * 3) / 2);
+        return Math.min(capSeconds, (baseSeconds + prevSleep * 3) / 2);
     }
 
     public boolean isMaxAttemptsReached(int attemptCount) {
-        return attemptCount >= MAX_ATTEMPTS;
+        return attemptCount >= maxAttempts;
     }
 
     public long getBaseSeconds() {
-        return BASE_SECONDS;
+        return baseSeconds;
     }
 
     public long getCapSeconds() {
-        return CAP_SECONDS;
+        return capSeconds;
     }
 
     public int getMaxAttempts() {
-        return MAX_ATTEMPTS;
+        return maxAttempts;
     }
 
     private long randomBetween(long low, long high) {

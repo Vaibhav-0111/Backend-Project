@@ -38,7 +38,10 @@ public class Endpoint {
     public String getUrl() { return url; }
     public void setUrl(String url) { this.url = url; }
     
+    @com.fasterxml.jackson.annotation.JsonIgnore
     public String getSecret() { return secret; }
+    
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY)
     public void setSecret(String secret) { this.secret = secret; }
     
     public List<String> getSubscribedEventTypes() { return subscribedEventTypes; }

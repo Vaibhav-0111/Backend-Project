@@ -10,8 +10,8 @@ CREATE TABLE endpoints (
     url VARCHAR(2048) NOT NULL,
     secret VARCHAR(255) NOT NULL,
     subscribed_event_types TEXT[] NOT NULL,
-    status VARCHAR(50) NOT NULL,
-    circuit_state VARCHAR(20) NOT NULL DEFAULT 'CLOSED',
+    status VARCHAR(50) NOT NULL CHECK (status IN ('ACTIVE', 'DISABLED')),
+    circuit_state VARCHAR(20) NOT NULL DEFAULT 'CLOSED' CHECK (circuit_state IN ('CLOSED', 'OPEN', 'HALF_OPEN')),
     cooldown_until TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -31,7 +31,7 @@ CREATE TABLE deliveries (
     event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
     endpoint_id UUID NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,
     tenant_id VARCHAR(50) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    status VARCHAR(50) NOT NULL,
+    status VARCHAR(50) NOT NULL CHECK (status IN ('PENDING', 'IN_PROGRESS', 'DELIVERED', 'DEAD_LETTERED')),
     attempt_count INT NOT NULL DEFAULT 0,
     next_attempt_at TIMESTAMP WITH TIME ZONE NOT NULL,
     locked_by VARCHAR(255),
@@ -55,3 +55,6 @@ CREATE TABLE delivery_attempts (
 
 -- Partial index for fast claiming of pending deliveries
 CREATE INDEX idx_deliveries_claim ON deliveries (next_attempt_at) WHERE status = 'PENDING';
+
+-- Index for fast querying of endpoint deliveries by status and creation time
+CREATE INDEX idx_deliveries_endpoint_status_created ON deliveries (endpoint_id, status, created_at);

@@ -23,7 +23,8 @@ class HttpDispatcherTest {
     void setUp() {
         wireMock = new WireMockServer(WireMockConfiguration.options().dynamicPort());
         wireMock.start();
-        dispatcher = new HttpDispatcher(new SignatureGenerator());
+        com.example.webhook.endpoint.UrlValidator urlValidator = org.mockito.Mockito.mock(com.example.webhook.endpoint.UrlValidator.class);
+        dispatcher = new HttpDispatcher(new SignatureGenerator(), urlValidator, 5, 10);
     }
 
     @AfterEach

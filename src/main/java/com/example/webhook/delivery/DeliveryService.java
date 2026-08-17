@@ -148,6 +148,14 @@ public class DeliveryService {
     }
 
     private void updateCircuitBreakerOnFailure(Endpoint endpoint) {
+        if ("HALF_OPEN".equals(endpoint.getCircuitState())) {
+            jdbcTemplate.update(
+                "UPDATE endpoints SET circuit_state = 'OPEN', cooldown_until = now() + interval '60 seconds' WHERE id = ?",
+                endpoint.getId());
+            log.warn("Circuit breaker OPENED (from HALF_OPEN) for endpoint {}", endpoint.getId());
+            return;
+        }
+
         // Count consecutive recent failures for this endpoint
         Integer recentFailures = jdbcTemplate.queryForObject("""
             SELECT COUNT(*) FROM delivery_attempts da

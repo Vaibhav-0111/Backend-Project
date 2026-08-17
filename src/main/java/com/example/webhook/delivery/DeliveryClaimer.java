@@ -20,17 +20,28 @@ public class DeliveryClaimer {
     }
 
     public List<Delivery> claimDeliveries(String workerId, int batchSize) {
+        jdbcTemplate.update("UPDATE endpoints SET circuit_state = 'HALF_OPEN', cooldown_until = NULL WHERE circuit_state = 'OPEN' AND cooldown_until <= now()");
+
         String sql = """
             UPDATE deliveries
             SET locked_by = ?, locked_until = now() + interval '30 seconds', status = 'IN_PROGRESS'
             WHERE id IN (
-              SELECT d.id FROM deliveries d
-              JOIN endpoints e ON d.endpoint_id = e.id
-              WHERE d.status = 'PENDING'
-                AND d.next_attempt_at <= now()
-                AND (d.locked_until IS NULL OR d.locked_until < now())
-                AND (e.circuit_state != 'OPEN' OR e.cooldown_until <= now())
-              ORDER BY d.next_attempt_at
+              SELECT sub.id FROM (
+                SELECT d.id, d.next_attempt_at, e.circuit_state,
+                       ROW_NUMBER() OVER(PARTITION BY e.id ORDER BY d.next_attempt_at) as rn
+                FROM deliveries d
+                JOIN endpoints e ON d.endpoint_id = e.id
+                WHERE d.status = 'PENDING'
+                  AND d.next_attempt_at <= now()
+                  AND (d.locked_until IS NULL OR d.locked_until < now())
+                  AND e.circuit_state IN ('CLOSED', 'HALF_OPEN')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM deliveries d2
+                      WHERE d2.endpoint_id = e.id AND d2.status = 'IN_PROGRESS'
+                  )
+              ) sub
+              WHERE sub.circuit_state = 'CLOSED' OR (sub.circuit_state = 'HALF_OPEN' AND sub.rn = 1)
+              ORDER BY sub.next_attempt_at
               FOR UPDATE SKIP LOCKED
               LIMIT ?
             )

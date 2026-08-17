@@ -9,6 +9,7 @@ public class EventIngestionRequest {
     private String eventId;
     
     @NotEmpty
+    @jakarta.validation.constraints.Pattern(regexp = "^(order\\.created|order\\.paid|user\\.signup|test\\.event)$", message = "Invalid event type")
     private String type;
     
     @NotNull

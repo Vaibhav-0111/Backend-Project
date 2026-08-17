@@ -45,10 +45,7 @@ public class DeliveryConcurrencyTest {
                 eventId, tenantId, "ext-1", "test.event", "{}");
 
         for (int i = 0; i < 100; i++) {
-            // Need distinct endpoint to avoid unique constraint if we reused same endpoint/event. 
-            // Wait, UNIQUE(event_id, endpoint_id) is on deliveries!
-            // If I insert 100 deliveries for the same event and endpoint, it will fail unique constraint.
-            // So I must insert 100 endpoints or 100 events. Let's insert 100 endpoints.
+            // Use distinct endpoints to avoid UNIQUE(event_id, endpoint_id) constraint on deliveries.
             UUID epId = UUID.randomUUID();
             jdbcTemplate.update("INSERT INTO endpoints (id, tenant_id, url, secret, subscribed_event_types, status) VALUES (?, ?, ?, ?, '{\"*\"}', 'ACTIVE')", 
                     epId, tenantId, "http://localhost/" + i, "secret");
