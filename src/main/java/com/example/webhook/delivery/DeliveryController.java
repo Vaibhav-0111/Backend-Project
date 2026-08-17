@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/deliveries")
+@RequestMapping("/api/v1")
 public class DeliveryController {
 
     private final DeliveryRepository deliveryRepository;
@@ -26,23 +26,30 @@ public class DeliveryController {
         this.tenantContext = tenantContext;
     }
 
+    // FR-4: GET /api/v1/events/{id}/deliveries
     @GetMapping("/events/{eventId}/deliveries")
     public ResponseEntity<List<Delivery>> listDeliveriesForEvent(@PathVariable UUID eventId) {
-        return ResponseEntity.ok(deliveryRepository.findByEventIdAndTenantId(eventId, tenantContext.getTenantId()));
+        return ResponseEntity.ok(
+            deliveryRepository.findByEventIdAndTenantId(eventId, tenantContext.getTenantId()));
     }
 
+    // FR-4: GET /api/v1/endpoints/{id}/deliveries
     @GetMapping("/endpoints/{endpointId}/deliveries")
     public ResponseEntity<List<Delivery>> listDeliveriesForEndpoint(@PathVariable UUID endpointId) {
-        return ResponseEntity.ok(deliveryRepository.findByEndpointIdAndTenantId(endpointId, tenantContext.getTenantId()));
+        return ResponseEntity.ok(
+            deliveryRepository.findByEndpointIdAndTenantId(endpointId, tenantContext.getTenantId()));
     }
 
+    // FR-4: GET /api/v1/deliveries/{id}/attempts
     @GetMapping("/deliveries/{id}/attempts")
-    public ResponseEntity<Iterable<DeliveryAttempt>> listAttempts(@PathVariable UUID id) {
+    public ResponseEntity<List<DeliveryAttempt>> listAttempts(@PathVariable UUID id) {
         return deliveryRepository.findByIdAndTenantId(id, tenantContext.getTenantId())
-                .map(delivery -> ResponseEntity.ok((Iterable<DeliveryAttempt>) deliveryAttemptRepository.findByDeliveryIdOrderByAttemptNumberAsc(id)))
+                .map(delivery -> ResponseEntity.ok(
+                    deliveryAttemptRepository.findByDeliveryIdOrderByAttemptNumberAsc(id)))
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    // FR-3: POST /api/v1/deliveries/{id}/redrive
     @PostMapping("/deliveries/{id}/redrive")
     public ResponseEntity<Void> redrive(@PathVariable UUID id) {
         boolean success = deliveryService.redrive(id, tenantContext.getTenantId());

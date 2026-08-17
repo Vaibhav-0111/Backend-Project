@@ -9,4 +9,5 @@ import java.util.UUID;
 @Repository
 public interface EventRepository extends TenantAwareRepository<Event, UUID> {
     Optional<Event> findByTenantIdAndEventIdExternal(String tenantId, String eventIdExternal);
+    Optional<Event> findByIdAndTenantId(UUID id, String tenantId);
 }
