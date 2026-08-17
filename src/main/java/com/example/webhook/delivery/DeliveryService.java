@@ -24,6 +24,7 @@ public class DeliveryService {
     private final EndpointRepository endpointRepository;
     private final EventRepository eventRepository;
     private final HttpDispatcher httpDispatcher;
+    private final BackoffCalculator backoffCalculator;
     private final JdbcTemplate jdbcTemplate;
 
     public DeliveryService(DeliveryRepository deliveryRepository,
@@ -31,24 +32,25 @@ public class DeliveryService {
                            EndpointRepository endpointRepository,
                            EventRepository eventRepository,
                            HttpDispatcher httpDispatcher,
+                           BackoffCalculator backoffCalculator,
                            JdbcTemplate jdbcTemplate) {
         this.deliveryRepository = deliveryRepository;
         this.deliveryAttemptRepository = deliveryAttemptRepository;
         this.endpointRepository = endpointRepository;
         this.eventRepository = eventRepository;
         this.httpDispatcher = httpDispatcher;
+        this.backoffCalculator = backoffCalculator;
         this.jdbcTemplate = jdbcTemplate;
     }
 
     @Transactional
     public void executeDelivery(Delivery delivery) {
-        // Load event payload
         Optional<Event> eventOpt = eventRepository.findByIdAndTenantId(delivery.getEventId(), delivery.getTenantId());
         Optional<Endpoint> endpointOpt = endpointRepository.findByIdAndTenantId(delivery.getEndpointId(), delivery.getTenantId());
 
         if (eventOpt.isEmpty() || endpointOpt.isEmpty()) {
             log.warn("Missing event or endpoint for delivery {}", delivery.getId());
-            markFailed(delivery, null, null, "Event or endpoint not found");
+            markFailed(delivery, null, "Event or endpoint not found");
             return;
         }
 
@@ -88,37 +90,79 @@ public class DeliveryService {
             delivery.setLockedUntil(null);
             deliveryRepository.save(delivery);
             log.info("Delivery {} succeeded with status {}", delivery.getId(), result.statusCode());
+            
+            // Circuit breaker: reset on success
+            updateCircuitBreakerOnSuccess(endpoint);
         } else {
-            markFailed(delivery, result.statusCode(), result.error(), null);
+            markFailed(delivery, result.statusCode(), result.error());
+            
+            // Circuit breaker: record failure
+            updateCircuitBreakerOnFailure(endpoint);
         }
     }
 
-    private void markFailed(Delivery delivery, Integer statusCode, String error, String reason) {
-        int nextAttempt = delivery.getAttemptCount();
-        int maxAttempts = 8;
-
-        if (nextAttempt >= maxAttempts) {
+    private void markFailed(Delivery delivery, Integer statusCode, String error) {
+        if (backoffCalculator.isMaxAttemptsReached(delivery.getAttemptCount())) {
             delivery.setStatus("DEAD_LETTERED");
             delivery.setLockedBy(null);
             delivery.setLockedUntil(null);
             deliveryRepository.save(delivery);
-            log.warn("Delivery {} dead-lettered after {} attempts", delivery.getId(), nextAttempt);
+            log.warn("Delivery {} dead-lettered after {} attempts", delivery.getId(), delivery.getAttemptCount());
         } else {
-            // Decorrelated jitter backoff (implemented fully in Step 8)
-            long baseSec = 30;
-            long capSec = 4 * 3600;
-            long prevSleep = baseSec;
-            for (int i = 0; i < nextAttempt; i++) {
-                prevSleep = Math.min(capSec, baseSec + (long) (Math.random() * (prevSleep * 3 - baseSec)));
-            }
-            long nextDelaySec = Math.min(capSec, baseSec + (long) (Math.random() * (prevSleep * 3 - baseSec)));
-
+            long delaySec = backoffCalculator.calculateDelay(delivery.getAttemptCount());
             delivery.setStatus("PENDING");
-            delivery.setNextAttemptAt(OffsetDateTime.now().plusSeconds(nextDelaySec));
+            delivery.setNextAttemptAt(OffsetDateTime.now().plusSeconds(delaySec));
             delivery.setLockedBy(null);
             delivery.setLockedUntil(null);
             deliveryRepository.save(delivery);
-            log.warn("Delivery {} failed (attempt {}), next retry in {}s", delivery.getId(), nextAttempt, nextDelaySec);
+            log.warn("Delivery {} failed (attempt {}), next retry in {}s", 
+                    delivery.getId(), delivery.getAttemptCount(), delaySec);
+        }
+    }
+
+    @Transactional
+    public boolean redrive(UUID deliveryId, String tenantId) {
+        Optional<Delivery> opt = deliveryRepository.findByIdAndTenantId(deliveryId, tenantId);
+        if (opt.isEmpty()) return false;
+        
+        Delivery delivery = opt.get();
+        if (!"DEAD_LETTERED".equals(delivery.getStatus())) return false;
+        
+        delivery.setStatus("PENDING");
+        delivery.setAttemptCount(0);
+        delivery.setNextAttemptAt(OffsetDateTime.now());
+        delivery.setLockedBy(null);
+        delivery.setLockedUntil(null);
+        delivery.setUpdatedAt(OffsetDateTime.now());
+        deliveryRepository.save(delivery);
+        log.info("Delivery {} redriven by tenant {}", deliveryId, tenantId);
+        return true;
+    }
+
+    private void updateCircuitBreakerOnSuccess(Endpoint endpoint) {
+        if (!"CLOSED".equals(endpoint.getCircuitState())) {
+            jdbcTemplate.update(
+                "UPDATE endpoints SET circuit_state = 'CLOSED', cooldown_until = NULL WHERE id = ?",
+                endpoint.getId());
+        }
+    }
+
+    private void updateCircuitBreakerOnFailure(Endpoint endpoint) {
+        // Count consecutive recent failures for this endpoint
+        Integer recentFailures = jdbcTemplate.queryForObject("""
+            SELECT COUNT(*) FROM delivery_attempts da
+            JOIN deliveries d ON d.id = da.delivery_id
+            WHERE d.endpoint_id = ? AND da.created_at > now() - interval '5 minutes'
+            AND (da.response_code IS NULL OR da.response_code >= 400)
+        """, Integer.class, endpoint.getId());
+
+        if (recentFailures != null && recentFailures >= 5 && "CLOSED".equals(endpoint.getCircuitState())) {
+            // Trip to OPEN
+            jdbcTemplate.update(
+                "UPDATE endpoints SET circuit_state = 'OPEN', cooldown_until = now() + interval '60 seconds' WHERE id = ?",
+                endpoint.getId());
+            log.warn("Circuit breaker OPENED for endpoint {} after {} consecutive failures", 
+                    endpoint.getId(), recentFailures);
         }
     }
 }
