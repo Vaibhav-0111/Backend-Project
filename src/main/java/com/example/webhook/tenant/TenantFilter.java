@@ -43,7 +43,11 @@ public class TenantFilter implements Filter {
             return;
         }
 
-        tenantContext.setTenantId(tenantId);
-        chain.doFilter(request, response);
+        try {
+            tenantContext.setTenantId(tenantId);
+            chain.doFilter(request, response);
+        } finally {
+            tenantContext.clear();
+        }
     }
 }
