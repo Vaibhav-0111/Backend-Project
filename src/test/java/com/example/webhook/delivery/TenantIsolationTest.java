@@ -28,9 +28,6 @@ class TenantIsolationTest {
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Autowired
-    private DeliveryClaimer deliveryClaimer;
-
-    @Autowired
     private DeliveryRepository deliveryRepository;
 
     @Autowired

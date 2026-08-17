@@ -5,6 +5,8 @@ import org.springframework.stereotype.Component;
 
 import java.net.InetAddress;
 import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.UnknownHostException;
 
@@ -17,8 +19,8 @@ public class UrlValidator {
     public void validateUrl(String urlString) {
         URL url;
         try {
-            url = new URL(urlString);
-        } catch (MalformedURLException e) {
+            url = new URI(urlString).toURL();
+        } catch (MalformedURLException | URISyntaxException e) {
             throw new IllegalArgumentException("Invalid URL format");
         }
 
